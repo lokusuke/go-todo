@@ -8,54 +8,46 @@ import (
 	"os"
 )
 
-// タスク構造体
+// ToDo（タスク）を管理するタスクマネージャ
+type taskManager struct {
+	tasks []task        // タスク状態管理
+	nextID int			// 最大ID + 1
+	targetPath string   // タスク保存先パス
+}
+
+// ToDo（タスク）
 type task struct {
 	ID        int    `json:"id"`
 	Title     string `json:"title"`
 	Completed bool   `json:"completed"`
 }
 
-// ID発行機
-func counter(init int) func() int {
-	var counter = init
-	return func() int {
-		counter++
-		return counter
+// ファクトリ関数
+func newTaskManager(targetPath string) (*taskManager, error) {
+	// 空のタスクマネージャを生成
+    taskManager := &taskManager{
+		tasks: []task{},
+		targetPath: targetPath,
 	}
-}
-
-// タスク新規追加
-func addTask(tasks []task, id int, title string) ([]task, task) {
-	newTask := task{
-		ID:        id,
-		Title:     title,
-		Completed: false,
-	}
-	tasks = append(tasks, newTask)
-	return tasks, newTask
-}
-
-// Struct->JSONへの変換
-func toJson(tasks []task) ([]byte, error) {
-	b, err := json.Marshal(tasks)
-	if err != nil {
+	// JSONファイルの読み込み
+	if err := taskManager.loadTasks(); err != nil {
+		// JSONファイルが存在しないケースは初回起動（正常）とみなす
+		if errors.Is(err, os.ErrNotExist) {
+			taskManager.nextID = taskManager.issueID()
+        	return taskManager, nil
+   		}
 		return nil, err
 	}
-	return b, nil
-}
 
-// JSON->Structへの変換
-func toStruct(data []byte, tasks *[]task) error {
-	if err := json.Unmarshal(data, tasks); err != nil {
-		return err
-	}
-	return nil
+	// 次のタスク追加時に発行するIDを格納
+	taskManager.nextID = taskManager.issueID()
+	return taskManager, nil
 }
 
 // 最大ID取得
-func getMaxID(tasks []task) int {
+func(m *taskManager) getMaxID() int{
 	var max int
-	for _, task := range tasks {
+	for _, task := range m.tasks {
 		if task.ID > max {
 			max = task.ID
 		}
@@ -63,15 +55,70 @@ func getMaxID(tasks []task) int {
 	return max
 }
 
+func(m *taskManager) issueID() int{
+	return m.getMaxID() + 1
+}
+
+// タスク新規追加
+func(m *taskManager) addTask(id int, title string) (task) {
+	newTask := task{
+		ID:        id,
+		Title:     title,
+		Completed: false,
+	}
+	m.tasks = append(m.tasks, newTask)
+	return newTask
+}
+
+// タスク完了
+func(m *taskManager) completeTask(done int) error {
+	for i, task := range m.tasks {
+		if task.ID == done {
+			m.tasks[i].Completed = true
+			return nil
+		}
+	}
+	return fmt.Errorf("task id %d does not exist\n", done)
+}
+
+// Struct->JSONへの変換
+func(m *taskManager) marshalTasks() ([]byte, error) {
+	b, err := json.Marshal(m.tasks)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// JSON->Structへの変換
+func(m *taskManager) unmarshalTasks(data []byte) error {
+	if err := json.Unmarshal(data, &m.tasks); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ファイル保存
+func(m *taskManager) save() error{
+	byte, err := m.marshalTasks()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(m.targetPath, byte, 0644); err != nil {
+		return err
+	}
+	return  nil
+}
+
 // 初期化処理
-func loadFile(targetPath string, tasks *[]task) error {
+func(m *taskManager) loadTasks() error {
 	// JSONファイルの読込
-	byte, err := os.ReadFile(targetPath)
+	byte, err := os.ReadFile(m.targetPath)
 	if err != nil {
 		return err
 	}
 	// JSON->Struct変換
-	if err := toStruct(byte, tasks); err != nil {
+	if err := m.unmarshalTasks(byte); err != nil {
 		return err
 	}
 	return nil
@@ -79,31 +126,20 @@ func loadFile(targetPath string, tasks *[]task) error {
 
 func main() {
 
-	// ToDoリスト
-	var tasks []task
-
 	// ToDoリストの保管先ファイルパス
 	var targetPath = "./tasks.json"
 
-	// JSONファイルの読み込み
-	if err := loadFile(targetPath, &tasks); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			fmt.Printf("%sが存在しませんでした。ToDoリストは新規ファイルに保存されます。: %v\n", targetPath, err)
-		} else {
-			fmt.Printf("内部エラーが発生しました: %v\n", err)
-			return
-		}
+	// タスクマネージャ初期化
+	taskManager, err := newTaskManager(targetPath)
+	if err != nil {
+		fmt.Printf("内部エラーが発生しました: %v\n", err)
+		fmt.Println("Todo管理ツールを終了します")
+		return
 	}
-
-	// IDの最新値を取得
-	maxID := getMaxID(tasks)
-
-	// ID発行機クロージャ生成
-	idCounter := counter(maxID)
 
 	// フラグの定義
 	add := flag.String("add", "", "add a task")
-	list := flag.Bool("list", false, "show tasks")
+	list := flag.Bool("list", false, "show registered tasks")
 	done := flag.Int("done", 0, "choose task id that is completed")
 
 	// 実行コマンドのフラグ情報を解析
@@ -112,24 +148,18 @@ func main() {
 	// フラグごとの処理
 	if *add != "" {
 
-		tasks, newTask := addTask(tasks, idCounter(), *add)
+		newTask := taskManager.addTask(taskManager.nextID, *add)
 
-		byte, err := toJson(tasks)
-		if err != nil {
-			fmt.Printf("内部エラーが発生しました: %v\n", err)
-		}
-
-		if err := os.WriteFile(targetPath, byte, 0644); err != nil {
+		if err := taskManager.save(); err != nil {
 			fmt.Printf("ファイルへの書き込みに失敗しました: %v\n", err)
+			return
 		}
-
 		fmt.Printf("タスクを登録しました: %v\n", newTask)
-
 	}
 	if *list != false {
 
 		fmt.Printf("%-6s%-8s%s\n", "ID", "STATUS", "TASK")
-		for _, task := range tasks {
+		for _, task := range taskManager.tasks {
 			if task.Completed == true {
 				fmt.Printf("%-7d%-7s%s\n", task.ID, "[x]", task.Title)
 				continue
@@ -138,20 +168,20 @@ func main() {
 		}
 	}
 	if *done != 0 {
-
-		for i, task := range tasks {
-			if task.ID == *done {
-				tasks[i].Completed = true
-			}
+		if err := taskManager.completeTask(*done); err != nil {
+			fmt.Println("該当のタスクIDは存在しません")
+			return
 		}
 
-		byte, err := toJson(tasks)
+		byte, err := taskManager.marshalTasks()
 		if err != nil {
 			fmt.Printf("内部エラーが発生しました: %v\n", err)
+			return
 		}
 
 		if err := os.WriteFile(targetPath, byte, 0644); err != nil {
 			fmt.Printf("ファイルへの書き込みに失敗しました: %v\n", err)
+			return
 		}
 		fmt.Printf("タスクID %dを完了しました\n", *done)
 	}
