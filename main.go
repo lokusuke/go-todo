@@ -9,20 +9,24 @@ import (
 )
 
 // ToDo（タスク）を管理するタスクマネージャ
+// タスクマネージャはタスクが保存されるJSONファイルを読み込み、
+// taskスライス、次に割り振るタスクIDを管理します
 type taskManager struct {
 	tasks []task        // タスク状態管理
 	nextID int			// 最大ID + 1
 	targetPath string   // タスク保存先パス
 }
 
-// ToDo（タスク）
+// ToDo（タスク）を表すエンティティ
 type task struct {
 	ID        int    `json:"id"`
 	Title     string `json:"title"`
 	Completed bool   `json:"completed"`
 }
 
-// ファクトリ関数
+// タスクマネージャを初期化するファクトリ関数
+// targetPathからJSONファイルを読み込み、taskスライスにデコードします
+// JSONファイルがない場合は初回起動とみなして空のスライスを生成します
 func newTaskManager(targetPath string) (*taskManager, error) {
 	// 空のタスクマネージャを生成
     taskManager := &taskManager{
@@ -124,6 +128,18 @@ func(m *taskManager) loadTasks() error {
 	return nil
 }
 
+// UI関数
+func viewTasks(tasks []task) {
+	fmt.Printf("%-6s%-8s%s\n", "ID", "STATUS", "TASK")
+	for _, task := range tasks {
+		if task.Completed == true {
+			fmt.Printf("%-7d%-7s%s\n", task.ID, "[x]", task.Title)
+			continue
+		}
+		fmt.Printf("%-7d%-7s%s\n", task.ID, "[ ]", task.Title)
+	}
+}
+
 func main() {
 
 	// ToDoリストの保管先ファイルパス
@@ -132,8 +148,8 @@ func main() {
 	// タスクマネージャ初期化
 	taskManager, err := newTaskManager(targetPath)
 	if err != nil {
-		fmt.Printf("内部エラーが発生しました: %v\n", err)
-		fmt.Println("Todo管理ツールを終了します")
+		fmt.Printf("ファイルの読み込み中にエラーが発生しました: %v\n", err)
+		fmt.Println("Todo管理プログラムを終了します")
 		return
 	}
 
@@ -157,29 +173,14 @@ func main() {
 		fmt.Printf("タスクを登録しました: %v\n", newTask)
 	}
 	if *list != false {
-
-		fmt.Printf("%-6s%-8s%s\n", "ID", "STATUS", "TASK")
-		for _, task := range taskManager.tasks {
-			if task.Completed == true {
-				fmt.Printf("%-7d%-7s%s\n", task.ID, "[x]", task.Title)
-				continue
-			}
-			fmt.Printf("%-7d%-7s%s\n", task.ID, "[ ]", task.Title)
-		}
+		viewTasks(taskManager.tasks)
 	}
 	if *done != 0 {
 		if err := taskManager.completeTask(*done); err != nil {
 			fmt.Println("該当のタスクIDは存在しません")
 			return
 		}
-
-		byte, err := taskManager.marshalTasks()
-		if err != nil {
-			fmt.Printf("内部エラーが発生しました: %v\n", err)
-			return
-		}
-
-		if err := os.WriteFile(targetPath, byte, 0644); err != nil {
+		if err := taskManager.save(); err != nil {
 			fmt.Printf("ファイルへの書き込みに失敗しました: %v\n", err)
 			return
 		}
