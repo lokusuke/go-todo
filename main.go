@@ -156,7 +156,7 @@ func main() {
 	// フラグの定義
 	add := flag.String("add", "", "add a task")
 	list := flag.Bool("list", false, "show registered tasks")
-	done := flag.Int("done", 0, "choose task id that is completed")
+	done := flag.Int("done", 0, "set task completed")
 
 	// 実行コマンドのフラグ情報を解析
 	flag.Parse()
