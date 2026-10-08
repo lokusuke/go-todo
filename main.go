@@ -13,7 +13,6 @@ import (
 // taskスライス、次に割り振るタスクIDを管理します
 type taskManager struct {
 	tasks []task        // タスク状態管理
-	nextID int			// 最大ID + 1
 	targetPath string   // タスク保存先パス
 }
 
@@ -37,26 +36,22 @@ func newTaskManager(targetPath string) (*taskManager, error) {
 	if err := taskManager.loadTasks(); err != nil {
 		// JSONファイルが存在しないケースは初回起動（正常）とみなす
 		if errors.Is(err, os.ErrNotExist) {
-			taskManager.nextID = taskManager.issueID()
         	return taskManager, nil
    		}
 		return nil, err
 	}
-
-	// 次のタスク追加時に発行するIDを格納
-	taskManager.nextID = taskManager.issueID()
 	return taskManager, nil
 }
 
 // 最大ID取得
 func(m *taskManager) getMaxID() int{
-	var max int
+	var maxID int
 	for _, task := range m.tasks {
-		if task.ID > max {
-			max = task.ID
+		if task.ID > maxID {
+			maxID = task.ID
 		}
 	}
-	return max
+	return maxID
 }
 
 func(m *taskManager) issueID() int{
@@ -64,9 +59,9 @@ func(m *taskManager) issueID() int{
 }
 
 // タスク新規追加
-func(m *taskManager) addTask(id int, title string) (task) {
+func(m *taskManager) addTask(title string) (task) {
 	newTask := task{
-		ID:        id,
+		ID:        m.issueID(),
 		Title:     title,
 		Completed: false,
 	}
@@ -114,15 +109,15 @@ func(m *taskManager) save() error{
 	return  nil
 }
 
-// 初期化処理
+// タスク読み込み処理
 func(m *taskManager) loadTasks() error {
 	// JSONファイルの読込
-	byte, err := os.ReadFile(m.targetPath)
+	data, err := os.ReadFile(m.targetPath)
 	if err != nil {
 		return err
 	}
 	// JSON->Struct変換
-	if err := m.unmarshalTasks(byte); err != nil {
+	if err := m.unmarshalTasks(data); err != nil {
 		return err
 	}
 	return nil
@@ -132,7 +127,7 @@ func(m *taskManager) loadTasks() error {
 func viewTasks(tasks []task) {
 	fmt.Printf("%-6s%-8s%s\n", "ID", "STATUS", "TASK")
 	for _, task := range tasks {
-		if task.Completed == true {
+		if task.Completed {
 			fmt.Printf("%-7d%-7s%s\n", task.ID, "[x]", task.Title)
 			continue
 		}
@@ -164,15 +159,15 @@ func main() {
 	// フラグごとの処理
 	if *add != "" {
 
-		newTask := taskManager.addTask(taskManager.nextID, *add)
+		newTask := taskManager.addTask(*add)
 
 		if err := taskManager.save(); err != nil {
 			fmt.Printf("ファイルへの書き込みに失敗しました: %v\n", err)
 			return
 		}
-		fmt.Printf("タスクを登録しました: %v\n", newTask)
+		fmt.Printf("タスクを登録しました: %s（ID: %d）\n", newTask.Title, newTask.ID)
 	}
-	if *list != false {
+	if *list {
 		viewTasks(taskManager.tasks)
 	}
 	if *done != 0 {
