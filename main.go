@@ -28,19 +28,19 @@ type task struct {
 // JSONファイルがない場合は初回起動とみなして空のスライスを生成します
 func newTaskManager(targetPath string) (*taskManager, error) {
 	// 空のタスクマネージャを生成
-    taskManager := &taskManager{
+    tm := &taskManager{
 		tasks: []task{},
 		targetPath: targetPath,
 	}
 	// JSONファイルの読み込み
-	if err := taskManager.loadTasks(); err != nil {
+	if err := tm.loadTasks(); err != nil {
 		// JSONファイルが存在しないケースは初回起動（正常）とみなす
 		if errors.Is(err, os.ErrNotExist) {
-        	return taskManager, nil
+        	return tm, nil
    		}
 		return nil, err
 	}
-	return taskManager, nil
+	return tm, nil
 }
 
 // 最大ID取得
@@ -99,11 +99,11 @@ func(m *taskManager) unmarshalTasks(data []byte) error {
 
 // ファイル保存
 func(m *taskManager) save() error{
-	byte, err := m.marshalTasks()
+	data, err := m.marshalTasks()
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(m.targetPath, byte, 0644); err != nil {
+	if err := os.WriteFile(m.targetPath, data, 0644); err != nil {
 		return err
 	}
 	return  nil
@@ -141,7 +141,7 @@ func main() {
 	var targetPath = "./tasks.json"
 
 	// タスクマネージャ初期化
-	taskManager, err := newTaskManager(targetPath)
+	tm, err := newTaskManager(targetPath)
 	if err != nil {
 		fmt.Printf("ファイルの読み込み中にエラーが発生しました: %v\n", err)
 		fmt.Println("Todo管理プログラムを終了します")
@@ -159,23 +159,23 @@ func main() {
 	// フラグごとの処理
 	if *add != "" {
 
-		newTask := taskManager.addTask(*add)
+		newTask := tm.addTask(*add)
 
-		if err := taskManager.save(); err != nil {
+		if err := tm.save(); err != nil {
 			fmt.Printf("ファイルへの書き込みに失敗しました: %v\n", err)
 			return
 		}
 		fmt.Printf("タスクを登録しました: %s（ID: %d）\n", newTask.Title, newTask.ID)
 	}
 	if *list {
-		viewTasks(taskManager.tasks)
+		viewTasks(tm.tasks)
 	}
 	if *done != 0 {
-		if err := taskManager.completeTask(*done); err != nil {
+		if err := tm.completeTask(*done); err != nil {
 			fmt.Println("該当のタスクIDは存在しません")
 			return
 		}
-		if err := taskManager.save(); err != nil {
+		if err := tm.save(); err != nil {
 			fmt.Printf("ファイルへの書き込みに失敗しました: %v\n", err)
 			return
 		}
